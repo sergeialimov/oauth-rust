@@ -69,28 +69,37 @@ pub async fn google_callback(
             .await
     {
         error!("Error while trying to make account: {e}");
-        return Error((
+        return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Error while creating user: {e}"),
         ));
     }
-    if let Err(e) = sqlx::query("INSERT INTO sessions (user_id, session_id, expires_at) VALUES ((SELECT ID FROM USERS WHERE email = $1 LIMIT 1),
-        $2, $3)
-        ON CONFLICT (user_id) DO UPDATE SET
-        session_id = excludes.session_id,
-        expires_at = excludes.expires_at")
-        .bind(profile.email)
-        .bind(token.access_token().secret().to_owned())
-        .bind(max_age)
-        .execute(&state.db)
-        .await {
-            error!("Error while trying to make session: {e}");
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Error while creating user: {e}")))
-        }
+
+    if let Err(e) = sqlx::query(
+        "INSERT INTO sessions (user_id, session_id, expires_at) VALUES (
+        (SELECT ID FROM USERS WHERE email = $1 LIMIT 1),
+         $2, $3)
+        ON CONFLICT (user_id) DO UPDATE SET 
+        session_id = excluded.session_id, 
+        expires_at = excluded.expires_at",
+    )
+    .bind(profile.email)
+    .bind(token.access_token().secret().to_owned())
+    .bind(max_age)
+    .execute(&state.db)
+    .await
+    {
+        error!("Error while trying to make session: {e}");
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Error while creating user: {e}"),
+        ));
+    }
 
     Ok((jar.add(cookie), Redirect::to("/protected")))
 }
 
+#[derive(Deserialize, sqlx::FromRow, Clone)]
 pub struct UserProfile {
     email: String,
 }
@@ -106,11 +115,11 @@ pub async fn check_authenticated<B>(
     };
 
     let res = match sqlx::query_as::<_, UserProfile>(
-        "SELECT
+        "SELECT 
         users.email
-        FROM sessions
-        LEFT JOIN USERS ON sessions.user_id = user.id
-        WHERE sessions.session_id = $1
+        FROM sessions 
+        LEFT JOIN USERS ON sessions.user_id = users.id
+        WHERE sessions.session_id = $1 
         LIMIT 1",
     )
     .bind(cookie)
@@ -123,7 +132,7 @@ pub async fn check_authenticated<B>(
 
     let user = UserProfile { email: res.email };
 
-    req.extension_mut().insert(user);
+    req.extensions_mut().insert(user);
     Ok(next.run(req).await)
 }
 

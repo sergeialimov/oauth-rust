@@ -6,7 +6,7 @@ pub enum ApiError {
 }
 
 impl ApiError {
-    pub fn to_error(&self, err: String) {
+    pub fn to_error(&self, err: String) -> (StatusCode, String) {
         match self {
             ApiError::SqlxError => (
                 StatusCode::INTERNAL_SERVER_ERROR,
