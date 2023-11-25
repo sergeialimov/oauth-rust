@@ -1,4 +1,4 @@
-use crate::route::errors::ApiError;
+use crate::routes::errors::ApiError;
 use crate::AppState;
 use axum::{
     extract::{State, Query},
@@ -96,7 +96,7 @@ pub struct UserProfile {
     email: String
 }
 
-pub async fn check_authentication<B> (
+pub async fn check_authenticated<B> (
     State(state): State<AppState>,
     jar: PrivateCookieJar,
     mut req: Request<B>,
