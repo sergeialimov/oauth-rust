@@ -15,7 +15,7 @@ impl ApiError {
             ApiError::ReqwestError => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Fetch error: {err}"),
-            )
+            ),
         }
     }
 }

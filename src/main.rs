@@ -1,27 +1,19 @@
-use axum::{
-    extract::FromRef,
-    routing::get,
-    Router,
-    Extension,
-    response::Html
-};
+use axum::middleware;
+use axum::{extract::FromRef, response::Html, routing::get, Extension, Router};
 use axum_extra::extract::cookie::Key;
+use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use reqwest::Client;
 use routes::oauth;
-use axum::middleware;
 use shuttle_secret::SecretStore;
 use sqlx::PgPool;
-use oauth2::{AuthUrl, TokenUrl, ClientId, RedirectUrl, basic::BasicClient, ClientSecret};
-
 
 pub mod routes;
-
 
 #[derive(Clone)]
 pub struct AppState {
     db: PgPool,
     ctx: Client,
-    key: Key
+    key: Key,
 }
 
 // this impl tells `SignedCookieJar` how to access the key form our state
@@ -36,7 +28,10 @@ async fn axum(
     #[shuttle_shared_db::Postgres] db: PgPool,
     #[shuttle_secrets::Secrets] secrets: SecretStore,
 ) -> shuttle_axum::ShuttleAxum {
-    sqlx::migrate!().run(&db).await.expect("Failed migrations :(");
+    sqlx::migrate!()
+        .run(&db)
+        .await
+        .expect("Failed migrations :(");
 
     let oauth_id = secrets.get("GOOGLE_OAUTH_CLIENT_ID)").unwrap();
 
@@ -47,24 +42,22 @@ async fn axum(
     let state = AppState {
         db,
         ctx,
-        key: Key::generate()
+        key: Key::generate(),
     };
 
     let oauth_client = build_oauth_client(oauth_id.clone(), oauth_secret);
 
-    let router = init_router(state, oauth_client, oauth_client);
+    let router = init_router(state, oauth_client, oauth_id);
 
     Ok(router.into())
-
 }
 
 fn init_router(state: AppState, oauth_client: BasicClient, oauth_id: String) -> Router {
-    let auth_router = Router::new()
-        .route("auth/google_callback", get(oauth::google_callback));
-    
-    let protected_router = Router::new()
-        .route("/", get(oauth::protected))
-        .route_layer(middleware::from_fn_with_state(state.clone(), oauth::check_authenticated));
+    let auth_router = Router::new().route("auth/google_callback", get(oauth::google_callback));
+
+    let protected_router = Router::new().route("/", get(oauth::protected)).route_layer(
+        middleware::from_fn_with_state(state.clone(), oauth::check_authenticated),
+    );
 
     let homepage_router = Router::new()
         .route("/", get(homepage))
@@ -74,9 +67,7 @@ fn init_router(state: AppState, oauth_client: BasicClient, oauth_id: String) -> 
         .nest("/api", auth_router)
         .nest("/protected", protected_router)
         .nest("/", homepage_router)
-        .layer(Extension(oauth_client)
-        .with_state(state)
-    )
+        .layer(Extension(oauth_client).with_state(state))
 }
 
 fn build_oauth_client(client_id: String, client_secret: String) -> BasicClient {
@@ -94,13 +85,12 @@ fn build_oauth_client(client_id: String, client_secret: String) -> BasicClient {
         auth_url,
         Some(token_url),
     )
-    .set_redirect_uri(RedirectUrl::new(redirect_url)).unwrap())
+    .set_redirect_uri(RedirectUrl::new(redirect_url).unwrap())
 }
 
-async fn homepage(
-    Extension(oauth_id): Extension<String>
-) -> Html<String> {
-    Html(format!("<p>Welcome!<p>"
+async fn homepage(Extension(oauth_id): Extension<String>) -> Html<String> {
+    Html(format!("<p>Welcome!<p>
+    
     <a href=\"https://accounts.google.com/o/oauth2/v2/auth?scope=openid%20profile%20email&ciend_id={oauth_id}&response_type=code&redirect_uri=http://localhost:8000/api/auth/google_callback\">
     Click here to sign into Google!
     </a>"))
